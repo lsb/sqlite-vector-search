@@ -124,6 +124,25 @@ async function queryToTopKtfjsdiststopk(query, codebook, embeddings, k) {
   return {topk, timingString};
 }
 
+async function queryToTopKtfjsdiststopkfiltered(query, codebook, embeddings, k, filterColumn, filterValue) {
+  const startTime = Date.now();
+  const qdtable = (mkdtable(query, codebook));
+  const dtableTime = Date.now();
+  const topkID = tf.tidy(
+    () => tf.gather(tf.tensor1d(qdtable), embeddings).reshape([-1, pqM]).sum(1).add(
+      tf.where(filterColumn.equal(tf.scalar(filterValue)), tf.scalar(0), tf.scalar(1024))
+      ).neg().topk(k)
+  );
+  const topk = await topkID.indices.data();
+  const topkv = await topkID.values.data();
+  console.log({topk, topkv});
+  const topkTime = Date.now();
+  const dtableTiming = dtableTime - startTime;
+  const topkTiming = topkTime - dtableTime;
+  const timingString = `${dtableTiming} + ${topkTiming}`
+  return {topk, timingString};
+}
+
 async function dtableToTopKtfjstile(qdtable, embeddings8, k, offset) {
   const startTime = Date.now();
   const {valuesTF, indicesTF} = tf.tidy(() => {
@@ -171,8 +190,7 @@ async function dtableToTopKtfjstileassemble(qdtable, embeddings8s, k, state, sta
 class App extends React.Component {
   constructor(props) {
     super(props);
-    const firstLetters = Float32Array.from({length: title0.length}, (e,i) => title0[i].charCodeAt(0));
-    console.log(title0.slice(0,10), firstLetters.slice(0,10))
+    const firstLetters = tf.tensor1d(Float32Array.from({length: title0.length}, (e,i) => title0[i].charCodeAt(0)));
     this.state = {title0, query: "cheeses", firstLetters, firstLetter: ""};
 
     // tf.setBackend("cpu");
@@ -182,30 +200,32 @@ class App extends React.Component {
     const {data: embed0full, shape, dtype} = await npy.load("./inmem-embedding-0.db.npy");
     // const embed0 = embed0full.slice(0, 1000 * pqM);
     const embed0tfjs = loadEmbeddingIndicesTFJS(embed0full);
-    this.setState({embed0tfjs, extractor});
-    setTimeout(() => this.makeQuery(this.state.query), 10);
+    this.setState({embed0tfjs, extractor}, () => this.makeQuery().then(() => this.makeQuery()), 10);
   }
-  async makeQuery(query) {
-    this.setState({query});
-    const {extractor, embed0tfjs, firstLetters, firstLetter} = this.state;
+  async makeQuery() {
+    const {extractor, embed0tfjs, query, firstLetters, firstLetter} = this.state;
+    const firstLetterInt = firstLetter.length === 0 ? 0 : firstLetter.charCodeAt(0);
     const minilmstart = Date.now();
     const minilmresult = await extractor(query, {pooling: "mean", normalize: true});
     const minilmend = Date.now();
     this.setState({minilmtime: minilmend - minilmstart});
-    const {topk, timingString: topktime} = await queryToTopKtfjsdiststopk(minilmresult.data, codebk, embed0tfjs, 20);
+    const {topk, timingString: topktime} = await queryToTopKtfjsdiststopkfiltered(minilmresult.data, codebk, embed0tfjs, 20, firstLetters, firstLetterInt);
     this.setState({topk, topktime});
   }
   render() {
-    const {topk, topktime, query, minilmtime} = this.state;
+    const {topk, topktime, query, minilmtime, firstLetter} = this.state;
     return (<div className="App">
       <h1>Similarity search on Wikipedia articles</h1>
-      <input type="text" value={query} onChange={e => this.makeQuery(e.target.value)}></input>
+      <input type="text" value={query} placeholder="query to make" onChange={e => this.setState({query: e.target.value}, () => this.makeQuery())}></input>
+      <input type="text" value={firstLetter} placeholder="first letter to filter on"
+             onChange={e => this.setState({firstLetter: e.target.value.slice(0,1)}, () => this.makeQuery())}></input>
       <div>
         {
           !topk ? "" : [...topk].map((idx) => (<div key={`topk${idx}`}>{title0[idx]} {idx}</div>))
         }
       </div>
-      minilmtime: {minilmtime} ms, topktime: {topktime} ms
+      <h4>minilmtime: {minilmtime} ms, topktime: {topktime} ms</h4>
+      <h3>© Lee Butterman 2023</h3>
 
     </div>);
   }
