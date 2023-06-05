@@ -124,12 +124,14 @@ async function queryToTopKtfjsdiststopk(query, codebook, embeddings, k) {
   return {topk, timingString};
 }
 
-async function queryToTopKtfjsdiststopkfiltered(query, codebook, embeddings, k, filterColumn, filterValue) {
+async function queryToTopKtfjsdiststopkfiltered(query, codebook, embeddings, distResult, k, filterColumn, filterValue) {
   const startTime = Date.now();
   const qdtable = (mkdtable(query, codebook));
   const dtableTime = Date.now();
+  mkdists(query, qdtable, embeddings, distResult);
+  const distTime = Date.now();
   const topkID = tf.tidy(
-    () => tf.gather(tf.tensor1d(qdtable), embeddings).reshape([-1, pqM]).sum(1).add(
+    () => tf.tensor1d(distResult).add(
       tf.where(filterColumn.equal(tf.scalar(filterValue)), tf.scalar(0), tf.scalar(1024))
       ).neg().topk(k)
   );
@@ -198,18 +200,17 @@ class App extends React.Component {
   async componentDidMount() {
     let extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     const {data: embed0full, shape, dtype} = await npy.load("./inmem-embedding-0.db.npy");
-    // const embed0 = embed0full.slice(0, 1000 * pqM);
-    const embed0tfjs = loadEmbeddingIndicesTFJS(embed0full);
-    this.setState({embed0tfjs, extractor}, () => this.makeQuery().then(() => this.makeQuery()), 10);
+    const distResult = Float32Array.from({length: embed0full.length / pqM});
+    this.setState({embed0full, distResult, extractor}, () => this.makeQuery().then(() => this.makeQuery()));
   }
   async makeQuery() {
-    const {extractor, embed0tfjs, query, firstLetters, firstLetter} = this.state;
+    const {extractor, embed0full, distResult, query, firstLetters, firstLetter} = this.state;
     const firstLetterInt = firstLetter.length === 0 ? 0 : firstLetter.charCodeAt(0);
     const minilmstart = Date.now();
     const minilmresult = await extractor(query, {pooling: "mean", normalize: true});
     const minilmend = Date.now();
     this.setState({minilmtime: minilmend - minilmstart});
-    const {topk, timingString: topktime} = await queryToTopKtfjsdiststopkfiltered(minilmresult.data, codebk, embed0tfjs, 20, firstLetters, firstLetterInt);
+    const {topk, timingString: topktime} = await queryToTopKtfjsdiststopkfiltered(minilmresult.data, codebk, embed0full, distResult, 20, firstLetters, firstLetterInt);
     this.setState({topk, topktime});
   }
   render() {
