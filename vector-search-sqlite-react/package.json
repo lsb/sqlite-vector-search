@@ -11,7 +11,7 @@
     "@testing-library/user-event": "^13.5.0",
     "@xenova/transformers": "^2.1.0",
     "npyjs": "^0.4.0",
-    "onnxruntime-web": "^1.15.0",
+    "onnxruntime-web": "^1.14.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
