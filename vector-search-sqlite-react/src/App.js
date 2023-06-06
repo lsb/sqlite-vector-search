@@ -4,6 +4,40 @@ import title0 from './inmem-title-0.db.json';
 import npyjs from 'npyjs';
 import * as tf from '@tensorflow/tfjs';
 import { pipeline } from '@xenova/transformers';
+import {setWasmPaths} from '@tensorflow/tfjs-backend-wasm';
+import * as ort from 'onnxruntime-web';
+
+setWasmPaths("./");
+const InferenceSession = ort.InferenceSession;
+const Tensor = ort.Tensor;
+
+const topkasc = Uint8Array.from([
+  0x08, 0x08, 0x12, 0x07, 0x70, 0x79, 0x74, 0x6f, 0x72, 0x63, 0x68, 0x1a,
+  0x05, 0x32, 0x2e, 0x31, 0x2e, 0x30, 0x3a, 0x8c, 0x02, 0x0a, 0x45, 0x12,
+  0x12, 0x2f, 0x43, 0x6f, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x5f, 0x6f,
+  0x75, 0x74, 0x70, 0x75, 0x74, 0x5f, 0x30, 0x1a, 0x09, 0x2f, 0x43, 0x6f,
+  0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74, 0x22, 0x08, 0x43, 0x6f, 0x6e, 0x73,
+  0x74, 0x61, 0x6e, 0x74, 0x2a, 0x1a, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75,
+  0x65, 0x2a, 0x0e, 0x08, 0x01, 0x10, 0x07, 0x4a, 0x08, 0x14, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0xa0, 0x01, 0x04, 0x0a, 0x75, 0x0a, 0x05,
+  0x69, 0x6e, 0x70, 0x75, 0x74, 0x0a, 0x12, 0x2f, 0x43, 0x6f, 0x6e, 0x73,
+  0x74, 0x61, 0x6e, 0x74, 0x5f, 0x6f, 0x75, 0x74, 0x70, 0x75, 0x74, 0x5f,
+  0x30, 0x12, 0x0e, 0x2f, 0x54, 0x6f, 0x70, 0x4b, 0x5f, 0x6f, 0x75, 0x74,
+  0x70, 0x75, 0x74, 0x5f, 0x30, 0x12, 0x06, 0x6f, 0x75, 0x74, 0x70, 0x75,
+  0x74, 0x1a, 0x05, 0x2f, 0x54, 0x6f, 0x70, 0x4b, 0x22, 0x04, 0x54, 0x6f,
+  0x70, 0x4b, 0x2a, 0x14, 0x0a, 0x04, 0x61, 0x78, 0x69, 0x73, 0x18, 0xff,
+  0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0xa0, 0x01, 0x02,
+  0x2a, 0x0e, 0x0a, 0x07, 0x6c, 0x61, 0x72, 0x67, 0x65, 0x73, 0x74, 0x18,
+  0x00, 0xa0, 0x01, 0x02, 0x2a, 0x0d, 0x0a, 0x06, 0x73, 0x6f, 0x72, 0x74,
+  0x65, 0x64, 0x18, 0x01, 0xa0, 0x01, 0x02, 0x12, 0x09, 0x74, 0x6f, 0x72,
+  0x63, 0x68, 0x5f, 0x6a, 0x69, 0x74, 0x5a, 0x1b, 0x0a, 0x05, 0x69, 0x6e,
+  0x70, 0x75, 0x74, 0x12, 0x12, 0x0a, 0x10, 0x08, 0x01, 0x12, 0x0c, 0x0a,
+  0x0a, 0x12, 0x08, 0x61, 0x72, 0x72, 0x61, 0x79, 0x6c, 0x65, 0x6e, 0x62,
+  0x24, 0x0a, 0x06, 0x6f, 0x75, 0x74, 0x70, 0x75, 0x74, 0x12, 0x1a, 0x0a,
+  0x18, 0x08, 0x07, 0x12, 0x14, 0x0a, 0x12, 0x12, 0x10, 0x54, 0x6f, 0x70,
+  0x4b, 0x6f, 0x75, 0x74, 0x70, 0x75, 0x74, 0x5f, 0x64, 0x69, 0x6d, 0x5f,
+  0x30, 0x42, 0x02, 0x10, 0x0f
+])
 
 const cheeseQuery = [
   -0.06281282007694244, -0.011832858435809612, -0.04853787645697594, 0.07560698688030243, -0.06296127289533615, 0.00524101359769702, 0.08884065598249435, 0.03829244524240494, 0.016301210969686508, -0.029298439621925354, 0.03202768787741661, -0.0397614948451519, -0.02547037973999977, -0.000877302372828126, -0.07129795104265213, -0.032620999962091446, 0.007332064211368561, 0.07219056785106659, -0.009115716442465782, -0.0477604903280735, -0.04739982262253761, -0.02305096760392189, -0.021510999649763107, 0.03866186738014221, -0.01052172388881445, 0.06766956299543381, 0.01068340428173542, -0.008600013330578804, 0.0003925655037164688, -0.05644231289625168, -0.02413081005215645, -0.04654720425605774, -0.012478794902563095, -0.04989619180560112, -0.024210482835769653, -0.0007501525687985122, 0.09323648363351822, 0.0023625686299055815, 0.05460986867547035, -0.00335524370893836, -0.011384670622646809, -0.027370771393179893, 0.02272067591547966, 0.07849320769309998, -0.05596395581960678, 0.0026804478839039803, -0.04896686598658562, 0.12230349332094193, 0.0538281686604023, -0.009031657129526138, -0.055631279945373535, -0.04105113446712494, -0.00982284639030695, -0.04104243591427803, 0.04531005024909973, -0.02482738345861435, -0.014698527753353119, -0.030536970123648643, 0.01048047561198473, -0.027314454317092896, 0.0730874240398407, -0.0484839603304863, 0.012367429211735725, 0.06153594329953194, -0.017688311636447906, 0.06282544136047363, -0.008619208820164204, 0.11380520462989807, -0.06485094875097275, 0.03161538392305374, -0.08442579954862595, -0.003403163282200694, -0.034203171730041504, 0.09476443380117416, 0.04696352779865265, -0.048934973776340485, 0.025614190846681595, -0.09149656444787979, -0.0001589152088854462, 0.023364264518022537, -0.07539594918489456, -0.06800805032253265, -0.11523798108100891, 0.04488767683506012, 0.04467574879527092, 0.015296893194317818, -0.034220896661281586, 0.018363304436206818, -0.04490645229816437, -0.02396480180323124, -0.06545764207839966, -0.1322217434644699, 0.027182670310139656, -0.027830569073557854, -0.06581177562475204, -0.0029751521069556475, -0.029349245131015778, -0.024500694125890732, 0.0034589029382914305, 0.15029747784137726, 0.02487434446811676, 0.000460569019196555, -0.01012482400983572, -0.024544309824705124, -0.05728583410382271, 0.04123035445809364, -0.07261089235544205, 0.03629255294799805, 0.07733314484357834, 0.06700873374938965, -0.05529317259788513, 0.010731826536357403, -0.04316233471035957, -0.050625305622816086, -0.11387152224779129, -0.010334400460124016, 0.056909672915935516, -0.06181927025318146, 0.03643766790628433, 0.026529308408498764, -0.015618699602782726, 0.0913844108581543, -0.005807776004076004, 0.05831346660852432, -0.02975742518901825, -0.07928101718425751, 0.006847692187875509, -3.7342009857808226e-33, -0.044612862169742584, -0.03038603439927101, 0.04724307358264923, 0.026274647563695908, 0.056686993688344955, 0.0005383383249863982, 0.05604104325175285, -0.014864226803183556, 0.011273477226495743, 0.03405267745256424, -0.0928586944937706, -0.01555026788264513, -0.06969284266233444, -0.014276521280407906, 0.08082535862922668, 0.0436437763273716, 0.04467545822262764, 0.027825722470879555, -0.03243696317076683, 0.021936222910881042, -0.03905110061168671, 0.07172513753175735, 0.02138369530439377, 0.06876939535140991, 0.00648476742208004, -0.05124739557504654, -0.02712886407971382, 0.026166744530200958, 0.004669467452913523, 0.010746996849775314, 0.06301965564489365, 0.03786127269268036, -0.022091025486588478, -0.005185069050639868, -0.02725883759558201, 0.027250278741121292, 0.008947745896875858, -0.03207797557115555, 0.014794277027249336, -0.028875408694148064, 0.03974015638232231, 0.04390980675816536, -0.058970559388399124, 0.026595264673233032, -0.02787221595644951, 0.020853055641055107, 0.04397730901837349, 0.02205188386142254, -0.10478149354457855, 0.0015457265544682741, 0.02845185436308384, -0.015144622884690762, -0.08603910356760025, 0.057815130800008774, 0.04688506945967674, -0.04871099442243576, 0.027441928163170815, -0.007971132174134254, -0.010364742949604988, 0.006912532728165388, 0.09632131457328796, 0.05931008979678154, 0.02828202396631241, -0.06246735528111458, -0.03268968313932419, -0.00923146028071642, -0.01578056439757347, 0.03178894519805908, 0.06294289976358414, 0.04852764308452606, -0.07466772943735123, -0.05829519405961037, 0.07783802598714828, 0.028615759685635567, 0.009375286288559437, 0.02740621194243431, -0.01262740045785904, 0.027700083330273628, -0.0007647071033716202, 0.06433849036693573, 0.07305226475000381, -0.049064647406339645, 0.0007018746109679341, -0.004831200931221247, -0.025271689519286156, 0.021305739879608154, -0.09240806847810745, -0.10696020722389221, 0.02691282145678997, 0.01192676741629839, -0.10910458117723465, -0.07577726989984512, 0.0059906672686338425, 0.012817547656595707, -0.07337988168001175, 2.20882937397292e-33, -0.00970129482448101, -0.0008890443714335561, 0.025159038603305817, 0.03216445446014404, -0.029028823599219322, -0.07230467349290848, -0.017560381442308426, 0.009655176661908627, 0.004650657530874014, -0.018973350524902344, -0.02648063190281391, -0.08179803192615509, 0.05508401617407799, 0.015361380763351917, -0.010303915478289127, 0.10453365743160248, 0.08664049208164215, 0.07045818120241165, 0.02225830964744091, 0.005326814949512482, -0.029758146032691002, 0.10719349980354309, 0.020321769639849663, 0.004576082807034254, -0.00970347411930561, 0.056710392236709595, -0.012632491998374462, 0.03581920266151428, -0.04048394411802292, 0.008288777433335781, -0.03195413574576378, -0.07414062321186066, -0.010983089916408062, -0.06738447397947311, -0.03590083867311478, 0.12669618427753448, -0.047042567282915115, -0.012933916412293911, 0.018783193081617355, 0.01398387085646391, 0.05807216838002205, 0.03393110632896423, 0.028616735711693764, 0.1640157848596573, -0.023674724623560905, 0.025184212252497673, -0.06785791367292404, 0.03754214197397232, -0.01875237002968788, -0.05621671304106712, -0.03103303350508213, 0.01948701962828636, -0.021705262362957, 0.035530488938093185, 0.022965850308537483, 0.0008099194383248687, -0.1432439088821411, 0.03201792761683464, -0.0019120104843750596, 0.006799780763685703, -0.05676870420575142, 0.029018830507993698, -0.05616496130824089, 0.017982453107833862, 0.0433293916285038, 0.008527462370693684, -0.11717122048139572, -0.0363474078476429, 0.0454230010509491, 0.06373080611228943, 0.013906359672546387, 0.07655136287212372, -0.03084327094256878, 0.0680752769112587, -0.08093347400426865, -0.03628154471516609, -0.13469424843788147, -0.015909863635897636, 0.028838898986577988, -0.07420545816421509, -0.08684119582176208, -0.08198755979537964, -0.03151702508330345, 0.06805195659399033, 0.042788174003362656, -0.013431697152554989, 0.03161859139800072, 0.07211349904537201, 0.03520360589027405, -0.015214978717267513, 0.002993817673996091, 0.005388138350099325, 0.05508936941623688, 0.052567269653081894, -0.02237694151699543, -1.3361016293345074e-08, 0.04772397130727768, -0.0267826896160841, -0.0364810936152935, 0.03497447818517685, -0.016774773597717285, -0.023732924833893776, -0.08438211679458618, 0.05286620557308197, 0.03211899474263191, 0.007982923649251461, 0.0004832404956687242, 0.11844845861196518, 0.0313359834253788, 0.05243931710720062, 0.0667080506682396, 0.02002478390932083, -0.025997087359428406, -0.026732834056019783, 0.0031178491190075874, 0.030602114275097847, 0.018868209794163704, 0.027936087921261787, -0.03340935707092285, 0.049200017005205154, 0.009585054591298103, -0.013665441423654556, 0.020078323781490326, 0.027619577944278717, 0.061408329755067825, 0.12329491227865219, 0.034617260098457336, -0.013518775813281536, -0.07200227677822113, 0.010118283331394196, 0.0902276337146759, -0.004371262155473232, -0.1268998682498932, -0.049298420548439026, 0.031330738216638565, -0.10541219264268875, -0.028444377705454826, -0.0035458304919302464, 0.009652034379541874, 0.00661476282402873, -0.08636262267827988, -0.015107897110283375, -0.04649168252944946, 0.10330937802791595, -0.06266234815120697, -0.044453781098127365, 0.03567503020167351, -0.004632569383829832, -0.025819703936576843, 0.09550286084413528, 0.015397702343761921, -0.028719278052449226, 0.09428182244300842, -0.0013695544330403209, -0.03321992605924606, 0.03398999944329262, 0.09356773644685745, 0.00015400235133711249, 0.10055354982614517, 0.002002575434744358
@@ -47,7 +81,7 @@ function mkdtable(query, cb, aout=null) {
 function mkdists(query, dtable, embeddings, aout=null) {
   const embeddingLength = embeddings.length / pqM;
   aout = aout || Float32Array.from({length: embeddingLength});
-  for(let i = 0; i < embeddingLength; i++) { // parallelize, eventually
+  for(let i = 0; i < embeddingLength; i++) { // parallelize 1M, eventually
     let dist = 0;
     for(let j = 0; j < pqM; j++) {
       dist += dtable[j * pqK + embeddings[i * pqM + j]]
@@ -124,7 +158,7 @@ async function queryToTopKtfjsdiststopk(query, codebook, embeddings, k) {
   return {topk, timingString};
 }
 
-async function queryToTopKtfjsdiststopkfiltered(query, codebook, embeddings, distResult, k, filterColumn, filterValue) {
+async function queryToTopKtfjsdiststopkfiltered(query, codebook, embeddings, topkinf, distResult, k, filterColumn, filterValue) {
   const startTime = Date.now();
   const qdtable = (mkdtable(query, codebook));
   const dtableTime = Date.now();
@@ -137,92 +171,54 @@ async function queryToTopKtfjsdiststopkfiltered(query, codebook, embeddings, dis
   );
   const topk = await topkID.indices.data();
   const topkv = await topkID.values.data();
-  console.log({topk, topkv});
   const topkTime = Date.now();
+  const {output: {data: topkortids}} = await topkinf.run({"input": (new Tensor("float32", distResult))})
+  const orttopktime = Date.now();
+  console.log({topk, topkv, topkortids});
+  
   const dtableTiming = dtableTime - startTime;
   const topkTiming = topkTime - dtableTime;
-  const timingString = `${dtableTiming} + ${topkTiming}`
-  return {topk, timingString};
-}
-
-async function dtableToTopKtfjstile(qdtable, embeddings8, k, offset) {
-  const startTime = Date.now();
-  const {valuesTF, indicesTF} = tf.tidy(() => {
-    const embeddingOffsets = tf.range(0, pqM * pqK, pqK, 'int32').reshape([1,pqM]);
-    const embeddings = tf.tensor1d(embeddings8, 'int32').reshape([-1, pqM]).add(embeddingOffsets).reshape([-1]);
-    const {indices, values} = tf.gather(tf.tensor1d(qdtable), embeddings).reshape([-1, pqM]).sum(1).neg().topk(k);
-    return {values, indices: indices.add(tf.tensor1d([offset]))};
-  })
-  const values = await valuesTF.data();
-  const indices = await indicesTF.data();
-  valuesTF.dispose();
-  indicesTF.dispose();
-  const endTime = Date.now();
-  return {values, indices, timingString: `offset ${offset} topk ${endTime - startTime} ms start ${startTime}`};
-}
-
-async function dtableToTopKtfjstileassemble(qdtable, embeddings8s, k, state, stateparam, generatorCallback) {
-  // spooky action at a distance: when state[stateparam] changes, abort
-  // for each embeddings8, for tileSize chunks of embeddings8, get the topk in each tile, merge the topk with the previous topks
-  const indexValues = new Map(); // idx -> val
-  const timingStrings = [];
-  const startingState = state[stateparam];
-  let currenttopk = [];
-  for(let eidx = 0; eidx < embeddings8s.length; eidx++) {
-    const cumOffset = embeddings8s.slice(0,eidx).map((e) => e.length).reduce((a,b) => a+b);
-    const eDataView = new DataView(embeddings8s[eidx].buffer, 0);
-    for(let tileOffset = 0; tileOffset < embeddings8s[eidx].length; tileOffset += tileSize) {
-      if(state[stateparam] !== startingState) return;
-      const zeroCopyEmbeddingSlice = new Uint8Array(eDataView.buffer, tileOffset, tileSize);
-      const {values, indices, timingString} = await dtableToTopKtfjstile(qdtable, zeroCopyEmbeddingSlice, k, cumOffset + tileOffset);
-      for(let i = 0; i < indices.length; i++) {
-        indexValues.set(indices[i], values[i]);
-      }
-      timingStrings.unshift(timingString);
-      const alltopk = [...indexValues.keys()];
-      alltopk.sort((idx1, idx2) => indexValues[idx1] - indexValues[idx2])
-      currenttopk = alltopk.slice(0,k);
-      generatorCallback({topk: currenttopk, timingString: timingStrings.join()});
-    }
-  }
-  return {topk: currenttopk, timingString: timingStrings.join()};
+  const timingString = `${dtableTiming} + ${topkTiming} (+ ${orttopktime - topkTime})`
+  return {topk, topkv, timingString};
 }
 
 
 class App extends React.Component {
   constructor(props) {
     super(props);
-    const firstLetters = tf.tensor1d(Float32Array.from({length: title0.length}, (e,i) => title0[i].charCodeAt(0)));
-    this.state = {title0, query: "cheeses", firstLetters, firstLetter: ""};
-
-    // tf.setBackend("cpu");
+    this.state = {title0, query: "where a word means like how it sounds", firstLetter: ""};
+    tf.setBackend("wasm");
   }
   async componentDidMount() {
     let extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     const {data: embed0full, shape, dtype} = await npy.load("./inmem-embedding-0.db.npy");
+    await tf.ready();
+    const firstLetters = tf.tensor1d(Float32Array.from({length: title0.length}, (e,i) => title0[i].charCodeAt(0)));
+    const embed0tfjs = null // loadEmbeddingIndicesTFJS(embed0full);
     const distResult = Float32Array.from({length: embed0full.length / pqM});
-    this.setState({embed0full, distResult, extractor}, () => this.makeQuery().then(() => this.makeQuery()));
+    const topkinf = await InferenceSession.create(topkasc);
+    this.setState({embed0full, embed0tfjs, distResult, extractor, firstLetters, topkinf}, () => this.makeQuery().then(() => this.makeQuery()));
   }
   async makeQuery() {
-    const {extractor, embed0full, distResult, query, firstLetters, firstLetter} = this.state;
+    const {extractor, embed0full, embed0tfjs, distResult, query, firstLetters, firstLetter, topkinf} = this.state;
     const firstLetterInt = firstLetter.length === 0 ? 0 : firstLetter.charCodeAt(0);
     const minilmstart = Date.now();
     const minilmresult = await extractor(query, {pooling: "mean", normalize: true});
     const minilmend = Date.now();
     this.setState({minilmtime: minilmend - minilmstart});
-    const {topk, timingString: topktime} = await queryToTopKtfjsdiststopkfiltered(minilmresult.data, codebk, embed0full, distResult, 20, firstLetters, firstLetterInt);
+    const {topk, timingString: topktime} = await queryToTopKtfjsdiststopkfiltered(minilmresult.data, codebk, embed0full, topkinf, distResult, 10, firstLetters, firstLetterInt);
     this.setState({topk, topktime});
   }
   render() {
     const {topk, topktime, query, minilmtime, firstLetter} = this.state;
     return (<div className="App">
-      <h1>Similarity search on Wikipedia articles</h1>
-      <input type="text" value={query} placeholder="query to make" onChange={e => this.setState({query: e.target.value}, () => this.makeQuery())}></input>
+      <h1>Wikipedia search-by-vibes</h1>
+      <h2><textarea value={query} placeholder="query to make" onChange={e => this.setState({query: e.target.value}, () => this.makeQuery())}></textarea></h2>
       <input type="text" value={firstLetter} placeholder="first letter to filter on"
              onChange={e => this.setState({firstLetter: e.target.value.slice(0,1)}, () => this.makeQuery())}></input>
       <div>
         {
-          !topk ? "" : [...topk].map((idx) => (<div key={`topk${idx}`}>{title0[idx]} {idx}</div>))
+          !topk ? "" : [...topk].map((idx) => (<div key={`topk${idx}`} title={idx}>{title0[idx]}</div>))
         }
       </div>
       <h4>minilmtime: {minilmtime} ms, topktime: {topktime} ms</h4>
