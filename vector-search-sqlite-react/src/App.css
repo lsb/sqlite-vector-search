@@ -28,6 +28,15 @@
   color: #61dafb;
 }
 
+h4 {
+  position: fixed;
+  left: 0;
+  bottom: 1em;
+  opacity: 0.25;
+}
+
+textarea, input[type="text"], body { font-size: 18px; }
+
 @keyframes App-logo-spin {
   from {
     transform: rotate(0deg);
