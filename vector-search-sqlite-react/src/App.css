@@ -33,6 +33,7 @@ h4 {
   left: 0;
   bottom: 1em;
   opacity: 0.25;
+  text-align: left;
 }
 
 textarea, input[type="text"], body { font-size: 18px; }
