@@ -109,57 +109,6 @@ const codebkT = new Tensor("float32", codebkflat, codebookshape)
 
 const npy = new npyjs();
 
-async function queryToTiledTopK(query, embeddings, topkinf, pqdistinf, k, filterColumn, filterValue, intermediateValueFn, continueFn) {
-  // the distances are a fairly heavyweight computation (compared to top10 for a million floats)
-  // so compute an arbitrary-sized chunk at a time, run topk based on that, and progressively work through all the embeddings.
-  // call a sentinel function to halt processing if the outside state changes (there is probably a better way)
-  const chunkSize = 100000;
-  const dists = Float32Array.from({length: filterColumn.length}, () => filterValue * 2); // initially, distances is double the bad value, everything is +Inf away
-  let topk;
-  let lastPaint = Date.now();
-  const maxTick = 30;
-  const timingStrings = [];
-  console.log({distsLength: dists.length, chunkSize})
-  for(let i=0; i<dists.length && continueFn();i+=chunkSize) {
-    const startTime = Date.now();
-    const startEmbeddingPosition = i * codebk.length;
-    const embeddingTileLength = chunkSize * codebk.length;
-    const embeddingTensorShape = [chunkSize, codebk.length];
-    const embeddingTile = new Uint8Array(embeddings.buffer, startEmbeddingPosition + embeddings.byteOffset, embeddingTileLength);
-    // console.log({i, startEmbeddingPosition, embeddingTileLength, embeddingTensorShape, workingShape: [embeddings.length / codebk.length, codebk.length], embeddingTile, embeddings});
-    const {output: {data: distTile}} = await pqdistinf.run({
-      "query": (new Tensor("float32", query)),
-      "codebook": codebkT,
-      "embeddings": (new Tensor("uint8", embeddingTile, embeddingTensorShape)),
-    });
-    for(let j=0;j<chunkSize;j++) {
-      dists[i+j] = distTile[j];
-    }
-    const distTime = Date.now();
-    if(distTime - lastPaint > maxTick) {
-      await (new Promise(r => setTimeout(r,0)));
-      lastPaint = Date.now()
-    }
-    // console.log({distTiming: distTime - startTime});
-    const {output: {data: topkTile}} = await topkinf.run({
-      "input": (new Tensor("float32", dists)),
-      "filterColumn": (new Tensor("float32", filterColumn)),
-      "filterValue": (new Tensor("float32", [filterValue])),
-      "filterZero": (new Tensor("float32", [0])),
-      "filterShim": (new Tensor("float32", [1024])),
-      "k": (new Tensor("uint8", [k])),
-    });
-    topk = topkTile;
-    const topkTime = Date.now();
-    // console.log({topk});
-    const distTiming = distTime - startTime;
-    const topkTiming = topkTime - startTime;
-    timingStrings.push(`${topkTiming}`)
-    intermediateValueFn({topk, topktime: timingStrings.join()});
-  }
-  return {topk, timingString: timingStrings.join()};
-}
-
 async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, intermediateValueFn, continueFn) {
   // compute distances a tile at a time, update in the dists array, compute topk not more frequently than every 30 ms (to avoid excessive screen repainting)
   // on an iphone, distances for 1M embeddings runs in ~100 ms whereas topk for 1M floats runs in ~3ms
