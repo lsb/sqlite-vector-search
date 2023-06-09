@@ -107,7 +107,8 @@ const codebkflat = Float32Array.from({length: codebk.length * codebk[0].length *
 const codebkT = new Tensor("float32", codebkflat, codebookshape)
 
 const npy = new npyjs();
-const numpyChunksize = 1000000;
+const numpyChunkSize = 1000000;
+const numpyChunkCount = 2;
 
 async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, intermediateValueFn, continueFn) {
   // compute distances a tile at a time, update in the dists array, compute topk not more frequently than every 30 ms (to avoid excessive screen repainting)
@@ -181,17 +182,31 @@ class App extends React.Component {
   }
   async componentDidMount() {
     let extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+    this.setState({extractor});
     const filteredtopkinf = await InferenceSession.create(filteredtopkasc);
     const pqdistinf = await InferenceSession.create(pqdist, {executionProviders: ['wasm']});
-    const {data: embed0full, shape0, dtype0} = await npy.load("./inmem-embedding-0.db.npy");
-    const {data: embed1full, shape1, dtype1} = await npy.load("./inmem-embedding-1.db.npy");
-    const embeddings = [
-      {data: embed0full, offset: 0, title: title0, },
-      {data: embed1full, offset: 1000000, title: title1, },
-    ]
-    const firstLetters = Float32Array.from({length: title0.length + title1.length}, (e,i) => ((embeddings[Math.floor(i / 1000000)].title)[i % 1000000].charCodeAt(0)));
+    this.setState({filteredtopkinf, pqdistinf}, () => this.loadEmbeddings(2));
+  }
+  async loadEmbeddings(maxCount) {
+    const embeddings = [];
+    const firstLetters = Float32Array.from({length: maxCount * numpyChunkSize});
     const dists = Float32Array.from({length: firstLetters.length}, () => 1234567890);
-    this.setState({embeddings, extractor, firstLetters, filteredtopkinf, pqdistinf, dists}, () => this.makeQuery());
+    this.setState({embeddings, firstLetters, dists});
+    const titles = [title0, title1];
+    for(let i = 0; i < maxCount; i++) {
+      const {data, shape, dtype} = await npy.load(`./inmem-embedding-${i}.db.npy`);
+      const lastEmbedding = {
+        data,
+        offset: i * numpyChunkSize,
+        title: titles[i],
+      };
+      embeddings.push(lastEmbedding);
+      for(let j = 0; j < lastEmbedding.title.length; j++) {
+        firstLetters[lastEmbedding.offset + j] = lastEmbedding.title[j].charCodeAt(0);
+      }
+      await this.makeQuery();
+    }
+
   }
   async makeQuery() {
     const {extractor, embeddings, query, firstLetters, firstLetter, filteredtopkinf, pqdistinf, dists, } = this.state;
@@ -204,12 +219,15 @@ class App extends React.Component {
     this.setState({distTime, topk});
   }
   render() {
-    const {query, minilmtime, distTime, firstLetter, filteredtopkinf, topk, embeddings} = this.state;
+    const {query, minilmtime, distTime, firstLetter, filteredtopkinf, topk, embeddings, extractor} = this.state;
+    if(!extractor) {
+      return (<div>Waiting for MiniLM to load</div>);
+    }
     if(!filteredtopkinf) {
       return (<div>Waiting for WASM to load</div>)
     }
     if(!embeddings) {
-      return (<div>Waiting for embeddings to load</div>)
+      return (<div>Waiting for the first embedding to load</div>)
     }
     return (<div className="App">
       <h1>Wikipedia search-by-vibes</h1>
@@ -218,7 +236,7 @@ class App extends React.Component {
              onChange={e => this.setState({firstLetter: e.target.value.slice(0,1)}, () => this.makeQuery())}></input></h2>
       <div>
         {
-          !topk ? "" : [...Int32Array.from(topk, e => Number(e))].map((idx) => (<div class="" key={`topk${idx}`} title={idx}>{(embeddings[Math.floor(idx / 1000000)].title)[idx % 1000000]}<sup>{`${idx}`}</sup></div>))
+          !topk ? "Waiting for topk to run once" : [...Int32Array.from(topk, e => Number(e))].map((idx) => (<div class="" key={`topk${idx}`} title={idx}>{(embeddings[Math.floor(idx / 1000000)].title)[idx % 1000000]}<sup>{`${idx}`}</sup></div>))
         }
       </div>
       <h4>minilm: {minilmtime} ms <br/> topk: {distTime} ms</h4>
