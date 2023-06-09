@@ -108,30 +108,6 @@ const codebkT = new Tensor("float32", codebkflat, codebookshape)
 
 const npy = new npyjs();
 
-async function queryToTopK(query, embeddings, topkinf, pqdistinf, k, filterColumn, filterValue) {
-  const startTime = Date.now();
-  const {output: {data: dists}} = await pqdistinf.run({
-    "query": (new Tensor("float32", query)),
-    "codebook": codebkT,
-    "embeddings": (new Tensor("uint8", embeddings, [embeddings.length / codebk.length, codebk.length])),
-  })
-  const distTime = Date.now();
-  const {output: {data: topk}} = await topkinf.run({
-    "input": (new Tensor("float32", dists)),
-    "filterColumn": (new Tensor("float32", filterColumn)),
-    "filterValue": (new Tensor("float32", [filterValue])),
-    "filterZero": (new Tensor("float32", [0])),
-    "filterShim": (new Tensor("float32", [1024])),
-    "k": (new Tensor("uint8", [k])),
-  })
-  const topkTime = Date.now();
-  console.log({topk});
-  const distTiming = distTime - startTime;
-  const topkTiming = topkTime - startTime;
-  const timingString = `${topkTiming} (${distTiming})`
-  return {topk: topk, timingString};
-}
-
 async function queryToTiledTopK(query, embeddings, topkinf, pqdistinf, k, filterColumn, filterValue, intermediateValueFn, continueFn) {
   // the distances are a fairly heavyweight computation (compared to top10 for a million floats)
   // so compute an arbitrary-sized chunk at a time, run topk based on that, and progressively work through all the embeddings.
