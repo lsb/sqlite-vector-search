@@ -1,6 +1,7 @@
 import './App.css';
 import React from 'react';
 import title0 from './inmem-title-0.db.json';
+import title1 from './inmem-title-1.db.json';
 import npyjs from 'npyjs';
 import { pipeline } from '@xenova/transformers';
 import * as ort from 'onnxruntime-web';
@@ -108,6 +109,7 @@ const codebkflat = Float32Array.from({length: codebk.length * codebk[0].length *
 const codebkT = new Tensor("float32", codebkflat, codebookshape)
 
 const npy = new npyjs();
+const numpyChunksize = 1000000;
 
 async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, intermediateValueFn, continueFn) {
   // compute distances a tile at a time, update in the dists array, compute topk not more frequently than every 30 ms (to avoid excessive screen repainting)
@@ -117,41 +119,52 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
   let lastPaint = Date.now();
   const maxTick = 30;
   const timingStrings = [];
-  console.log({distsLength: dists.length, chunkSize});
-  for(let i=0; i<dists.length && continueFn();i+=chunkSize) {
-    const startTime = Date.now();
-    const startEmbeddingPosition = i * codebk.length;
-    const embeddingTileLength = chunkSize * codebk.length;
-    const embeddingTensorShape = [chunkSize, codebk.length];
-    const embeddingTile = new Uint8Array(embeddings.buffer, startEmbeddingPosition + embeddings.byteOffset, embeddingTileLength);
-    // console.log({i, startEmbeddingPosition, embeddingTileLength, embeddingTensorShape, workingShape: [embeddings.length / codebk.length, codebk.length], embeddingTile, embeddings});
-    const {output: {data: distTile}} = await pqdistinf.run({
-      "query": (new Tensor("float32", query)),
-      "codebook": codebkT,
-      "embeddings": (new Tensor("uint8", embeddingTile, embeddingTensorShape)),
-    });
-    for(let j=0;j<chunkSize;j++) {
-      dists[i+j] = distTile[j];
-    }
-    const distTime = Date.now();
-    timingStrings.push(`${distTime - startTime}`)
-    intermediateValueFn({dists, distTime: timingStrings.join(), lastPaint});
-    if(i === 0 || distTime - lastPaint > maxTick) {
-      const {output: {data: topk}} = await filteredtopkinf.run({
-        "input": (new Tensor("float32", dists)),
-        "filterColumn": (new Tensor("float32", firstLetters)),
-        "filterValue": (new Tensor("float32", [firstLetterInt])),
-        "filterZero": (new Tensor("float32", [0])),
-        "filterShim": (new Tensor("float32", [1024])),
-        "k": (new Tensor("uint8", [10])),
-      })
-      const topktime = Date.now();
-      timingStrings.push(`_(${topktime-distTime})_`);
-      intermediateValueFn({topk});
-      await (new Promise(r => setTimeout(r,0)));
-      lastPaint = Date.now()
+  // console.log({distsLength: dists.length, chunkSize});
+  for(let embeddingCounter=0; embeddingCounter<embeddings.length; embeddingCounter++){
+    // console.log(`starting embedding ${embeddingCounter}`)
+    const {data: embeddingData, offset: embeddingOffset} = embeddings[embeddingCounter];
+    for(let i=0; i < (embeddingData.length / codebk.length) && continueFn(); i+=chunkSize) {
+      // console.log({i, embeddingDatalength: embeddingData.length, continuefn: continueFn()})
+      const startTime = Date.now();
+      const startEmbeddingPosition = i * codebk.length;
+      const embeddingTileLength = chunkSize * codebk.length;
+      const embeddingTensorShape = [chunkSize, codebk.length];
+      const embeddingTile = new Uint8Array(embeddingData.buffer, startEmbeddingPosition + embeddingData.byteOffset, embeddingTileLength);
+      // console.log({i, startEmbeddingPosition, embeddingTileLength, embeddingTensorShape, workingShape: [embeddings.length / codebk.length, codebk.length], embeddingTile, embeddings});
+      const {output: {data: distTile}} = await pqdistinf.run({
+        "query": (new Tensor("float32", query)),
+        "codebook": codebkT,
+        "embeddings": (new Tensor("uint8", embeddingTile, embeddingTensorShape)),
+      });
+      // console.log("got dists")
+      for(let j=0;j<chunkSize;j++) {
+        dists[embeddingOffset+i+j] = distTile[j];
+      }
+      // console.log("wrote dists");
+      const distTime = Date.now();
+      timingStrings.push(`${distTime - startTime}`)
+      // console.log("2")
+      intermediateValueFn({dists, distTime: timingStrings.join(), lastPaint});
+      // console.log("1")
+      if(i === 0 || distTime - lastPaint > maxTick) {
+        // console.log("0, or we're over time")
+        const {output: {data: topk}} = await filteredtopkinf.run({
+          "input": (new Tensor("float32", dists)),
+          "filterColumn": (new Tensor("float32", firstLetters)),
+          "filterValue": (new Tensor("float32", [firstLetterInt])),
+          "filterZero": (new Tensor("float32", [0])),
+          "filterShim": (new Tensor("float32", [1024])),
+          "k": (new Tensor("uint8", [10])),
+        })
+        const topktime = Date.now();
+        timingStrings.push(`_(${topktime-distTime})_`);
+        intermediateValueFn({topk});
+        await (new Promise(r => setTimeout(r,0)));
+        lastPaint = Date.now()
+      }
     }
   }
+  // console.log("final topk")
   const {output: {data: topk}} = await filteredtopkinf.run({
     "input": (new Tensor("float32", dists)),
     "filterColumn": (new Tensor("float32", firstLetters)),
@@ -170,29 +183,35 @@ class App extends React.Component {
   }
   async componentDidMount() {
     let extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-    const {data: embed0full, shape, dtype} = await npy.load("./inmem-embedding-0.db.npy");
-    //const embed0full1de = Int32Array.from(embed0full)
-    const firstLetters = Float32Array.from({length: title0.length}, (e,i) => title0[i].charCodeAt(0));
-    const dists = Float32Array.from({length: firstLetters.length}, () => 1234567890);
     const filteredtopkinf = await InferenceSession.create(filteredtopkasc);
     const pqdistinf = await InferenceSession.create(pqdist, {executionProviders: ['wasm']});
-    this.setState({embed0full, extractor, firstLetters, filteredtopkinf, pqdistinf, dists}, () => this.makeQuery());
+    const {data: embed0full, shape0, dtype0} = await npy.load("./inmem-embedding-0.db.npy");
+    const {data: embed1full, shape1, dtype1} = await npy.load("./inmem-embedding-1.db.npy");
+    const embeddings = [
+      {data: embed0full, offset: 0, title: title0, },
+      {data: embed1full, offset: 1000000, title: title1, },
+    ]
+    const firstLetters = Float32Array.from({length: title0.length + title1.length}, (e,i) => ((embeddings[Math.floor(i / 1000000)].title)[i % 1000000].charCodeAt(0)));
+    const dists = Float32Array.from({length: firstLetters.length}, () => 1234567890);
+    this.setState({embeddings, extractor, firstLetters, filteredtopkinf, pqdistinf, dists}, () => this.makeQuery());
   }
   async makeQuery() {
-    const {extractor, embed0full, query, firstLetters, firstLetter, filteredtopkinf, pqdistinf, dists, } = this.state;
+    const {extractor, embeddings, query, firstLetters, firstLetter, filteredtopkinf, pqdistinf, dists, } = this.state;
     const firstLetterInt = firstLetter.length === 0 ? 0 : firstLetter.charCodeAt(0);
     const minilmstart = Date.now();
     const minilmresult = await extractor(query, {pooling: "mean", normalize: true});
     const minilmend = Date.now();
     this.setState({minilmtime: minilmend - minilmstart});
-    // const {topk, timingString: topktime} = await queryToTopK(minilmresult.data, embed0full, filteredtopkinf, pqdistinf, 10, firstLetters, firstLetterInt);
-    const {distTime, topk} = await queryToTiledDist(minilmresult.data, embed0full, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, (h) => this.setState(h), () => query === this.state.query);
+    const {distTime, topk} = await queryToTiledDist(minilmresult.data, embeddings, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, (h) => this.setState(h), () => query === this.state.query);
     this.setState({distTime, topk});
   }
   render() {
-    const {query, minilmtime, distTime, firstLetter, filteredtopkinf, topk} = this.state;
+    const {query, minilmtime, distTime, firstLetter, filteredtopkinf, topk, embeddings} = this.state;
     if(!filteredtopkinf) {
       return (<div>Waiting for WASM to load</div>)
+    }
+    if(!embeddings) {
+      return (<div>Waiting for embeddings to load</div>)
     }
     return (<div className="App">
       <h1>Wikipedia search-by-vibes</h1>
@@ -201,7 +220,7 @@ class App extends React.Component {
              onChange={e => this.setState({firstLetter: e.target.value.slice(0,1)}, () => this.makeQuery())}></input></h2>
       <div>
         {
-          !topk ? "" : [...topk].map((idx) => (<div key={`topk${idx}`} title={idx}>{title0[idx]}</div>))
+          !topk ? "" : [...Int32Array.from(topk, e => Number(e))].map((idx) => (<div class="" key={`topk${idx}`} title={idx}>{(embeddings[Math.floor(idx / 1000000)].title)[idx % 1000000]}<sup>{`${idx}`}</sup></div>))
         }
       </div>
       <h4>minilm: {minilmtime} ms <br/> topk: {distTime} ms</h4>
