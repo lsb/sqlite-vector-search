@@ -28,12 +28,18 @@
   color: #61dafb;
 }
 
+h1 {
+  font-size: 0.333in;
+}
+
 h4 {
   position: fixed;
   left: 0;
-  bottom: 1em;
-  opacity: 0.25;
+  bottom: 0;
+  opacity: 0.2;
   text-align: left;
+  margin: 0;
+  font-size: 0.1in;
 }
 
 textarea, input[type="text"], body { font-size: 18px; }
