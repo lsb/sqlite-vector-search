@@ -1,9 +1,7 @@
 import './App.css';
 import React from 'react';
-import title0 from './inmem-title-0.db.json';
-import title1 from './inmem-title-1.db.json';
+import { tableFromIPC } from 'apache-arrow';
 import codebk from './codewords.json';
-import npyjs from 'npyjs';
 import { pipeline } from '@xenova/transformers';
 import * as ort from 'onnxruntime-web';
 
@@ -106,9 +104,7 @@ const codebookshape = [codebk.length, codebk[0].length, codebk[0][0].length];
 const codebkflat = Float32Array.from({length: codebk.length * codebk[0].length * codebk[0][0].length}, (e,i) => codebk[Math.floor(i / codebk[0].length / codebk[0][0].length)][Math.floor(i / codebk[0][0].length) % codebk[0].length][i % codebk[0][0].length])
 const codebkT = new Tensor("float32", codebkflat, codebookshape)
 
-const npy = new npyjs();
-const numpyChunkSize = 1000000;
-const numpyChunkCount = 2;
+const numpyChunkSize = 200000;
 
 async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, intermediateValueFn, continueFn) {
   // compute distances a tile at a time, update in the dists array, compute topk not more frequently than every 30 ms (to avoid excessive screen repainting)
@@ -145,7 +141,7 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
       // console.log("2")
       intermediateValueFn({dists, distTime: timingStrings.join(), lastPaint});
       // console.log("1")
-      if(i === 0 || distTime - lastPaint > maxTick) {
+      if((i === 0 && embeddingCounter === 0) || (distTime - lastPaint > maxTick)) {
         // console.log("0, or we're over time")
         const {output: {data: topk}} = await filteredtopkinf.run({
           "input": (new Tensor("float32", dists)),
@@ -178,31 +174,38 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {title0, query: "where a word means like how it sounds", firstLetter: ""};
+    this.state = {query: "where a word means like how it sounds", firstLetter: "", chunkCount: 10};
   }
   async componentDidMount() {
     let extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
     this.setState({extractor});
     const filteredtopkinf = await InferenceSession.create(filteredtopkasc);
     const pqdistinf = await InferenceSession.create(pqdist, {executionProviders: ['wasm']});
-    this.setState({filteredtopkinf, pqdistinf}, () => this.loadEmbeddings(2));
+    this.setState({filteredtopkinf, pqdistinf}, () => this.loadEmbeddings(this.state.chunkCount));
   }
   async loadEmbeddings(maxCount) {
     const embeddings = [];
     const firstLetters = Float32Array.from({length: maxCount * numpyChunkSize});
     const dists = Float32Array.from({length: firstLetters.length}, () => 1234567890);
     this.setState({embeddings, firstLetters, dists});
-    const titles = [title0, title1];
     for(let i = 0; i < maxCount; i++) {
-      const {data, shape, dtype} = await npy.load(`./inmem-embedding-${i}.db.npy`);
+      const embeddingShardPath = `./embedding-${i}-shardsize-${numpyChunkSize}.arrow`;
+      const titleShardPath = `./title-${i}-shardsize-${numpyChunkSize}.arrow`;
+      const eResponse = await fetch(embeddingShardPath);
+      const tResponse = await fetch(titleShardPath);
+      const eBuffer = await eResponse.arrayBuffer();
+      const tBuffer = await tResponse.arrayBuffer();
+      const eArrow = tableFromIPC(eBuffer);
+      const title = tableFromIPC(tBuffer);
+      const data = eArrow.data[0].children[0].values;
       const lastEmbedding = {
         data,
         offset: i * numpyChunkSize,
-        title: titles[i],
+        title,
       };
       embeddings.push(lastEmbedding);
-      for(let j = 0; j < lastEmbedding.title.length; j++) {
-        firstLetters[lastEmbedding.offset + j] = lastEmbedding.title[j].charCodeAt(0);
+      for(let j = 0; j < lastEmbedding.data.length / codebk.length; j++) {
+        firstLetters[lastEmbedding.offset + j] = lastEmbedding.title.get(j)['title'].charCodeAt(0);
       }
       await this.makeQuery();
     }
@@ -236,11 +239,11 @@ class App extends React.Component {
              onChange={e => this.setState({firstLetter: e.target.value.slice(0,1)}, () => this.makeQuery())}></input></h2>
       <div>
         {
-          !topk ? "Waiting for topk to run once" : [...Int32Array.from(topk, e => Number(e))].map((idx) => (<div class="" key={`topk${idx}`} title={idx}>{(embeddings[Math.floor(idx / 1000000)].title)[idx % 1000000]}<sup>{`${idx}`}</sup></div>))
+          !topk ? "Waiting for topk to run once" : [...Int32Array.from(topk, e => Number(e))].map((idx) => (<div class="" key={`topk${idx}`} title={idx}>{(embeddings[Math.floor(idx / numpyChunkSize)].title).get(idx % numpyChunkSize)['title']}<sup>{`${idx}`}</sup></div>))
         }
       </div>
       <h4>minilm: {minilmtime} ms <br/> topk: {distTime} ms</h4>
-      <h3>© Lee Butterman 2023</h3>
+      <h3>Searching {`${embeddings.length * numpyChunkSize / 1000000}`}M articles <br/> © Lee Butterman 2023</h3>
 
     </div>);
   }
