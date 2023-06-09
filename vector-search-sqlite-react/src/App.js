@@ -4,6 +4,7 @@ import { tableFromIPC } from 'apache-arrow';
 import codebk from './codewords.json';
 import { pipeline } from '@xenova/transformers';
 import * as ort from 'onnxruntime-web';
+import RangeSlider from 'react-bootstrap-range-slider';
 
 const InferenceSession = ort.InferenceSession;
 const Tensor = ort.Tensor;
@@ -114,7 +115,7 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
   let lastPaint = Date.now();
   const maxTick = 30;
   const timingStrings = [];
-  // console.log({distsLength: dists.length, chunkSize});
+  // console.log({dists: dists.length, chunkSize, firstLetters: firstLetters.length});
   for(let embeddingCounter=0; embeddingCounter<embeddings.length; embeddingCounter++){
     // console.log(`starting embedding ${embeddingCounter}`)
     const {data: embeddingData, offset: embeddingOffset} = embeddings[embeddingCounter];
@@ -152,7 +153,7 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
           "k": (new Tensor("uint8", [10])),
         })
         const topktime = Date.now();
-        timingStrings.push(`_(${topktime-distTime})_`);
+        timingStrings.push(`-${topktime-distTime} `);
         intermediateValueFn({topk});
         await (new Promise(r => setTimeout(r,0)));
         lastPaint = Date.now()
@@ -174,7 +175,7 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {query: "where a word means like how it sounds", firstLetter: "", chunkCount: 10};
+    this.state = {query: "where a word means like how it sounds", firstLetter: "", chunkCount: 10, embeddings: [], dists: [], firstLetters: []};
   }
   async componentDidMount() {
     let extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
@@ -184,11 +185,16 @@ class App extends React.Component {
     this.setState({filteredtopkinf, pqdistinf}, () => this.loadEmbeddings(this.state.chunkCount));
   }
   async loadEmbeddings(maxCount) {
-    const embeddings = [];
+    const embeddings = this.state.embeddings.slice(0, maxCount);
     const firstLetters = Float32Array.from({length: maxCount * numpyChunkSize});
     const dists = Float32Array.from({length: firstLetters.length}, () => 1234567890);
-    this.setState({embeddings, firstLetters, dists});
-    for(let i = 0; i < maxCount; i++) {
+    const maxoldlen = Math.min(firstLetters.length, this.state.firstLetters.length);
+    for(let i = 0; i < maxoldlen; i++) {
+      firstLetters[i] = this.state.firstLetters[i];
+      dists[i] = this.state.dists[i];
+    }
+    this.setState({embeddings, firstLetters, dists, loadingEmbeddings: true});
+    for(let i = embeddings.length; i < maxCount; i++) {
       const embeddingShardPath = `./embedding-${i}-shardsize-${numpyChunkSize}.arrow`;
       const titleShardPath = `./title-${i}-shardsize-${numpyChunkSize}.arrow`;
       const eResponse = await fetch(embeddingShardPath);
@@ -209,6 +215,7 @@ class App extends React.Component {
       }
       await this.makeQuery();
     }
+    this.setState({loadingEmbeddings: false}, () => this.makeQuery())
 
   }
   async makeQuery() {
@@ -239,11 +246,19 @@ class App extends React.Component {
              onChange={e => this.setState({firstLetter: e.target.value.slice(0,1)}, () => this.makeQuery())}></input></h2>
       <div>
         {
-          !topk ? "Waiting for topk to run once" : [...Int32Array.from(topk, e => Number(e))].map((idx) => (<div class="" key={`topk${idx}`} title={idx}>{(embeddings[Math.floor(idx / numpyChunkSize)].title).get(idx % numpyChunkSize)['title']}<sup>{`${idx}`}</sup></div>))
+          (!topk) ? "Waiting for topk to run once" : [...Int32Array.from(topk, e => Number(e))].filter(idx => idx < embeddings.length * numpyChunkSize).map((idx) => (<div class="" key={`topk${idx}`} title={idx}>{(embeddings[Math.floor(idx / numpyChunkSize)].title).get(idx % numpyChunkSize)['title']}<sup>{`${idx}`}</sup></div>))
         }
       </div>
       <h4>minilm: {minilmtime} ms <br/> topk: {distTime} ms</h4>
-      <h3>Searching {`${embeddings.length * numpyChunkSize / 1000000}`}M articles <br/> © Lee Butterman 2023</h3>
+      <h3>
+        <RangeSlider tooltip='on' tooltipLabel={currentValue => (this.state.loadingEmbeddings ? "⏳ " : "") + (currentValue === embeddings.length ? `Searching ${embeddings.length * numpyChunkSize / 1000000}M articles` : `Load ${currentValue * numpyChunkSize / 1000000}M articles`)}
+          min={0} max={32} value={this.state.newEmbeddingSliderValue || embeddings.length}
+          onChange={e => this.setState({newEmbeddingSliderValue: e.target.value})}
+          onAfterChange={e => {this.setState({newEmbeddingSliderValue: null}); this.loadEmbeddings(e.target.value)}}
+          />
+        <br/>
+        © Lee Butterman 2023
+      </h3>
 
     </div>);
   }
