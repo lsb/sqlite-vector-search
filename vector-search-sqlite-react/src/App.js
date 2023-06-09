@@ -115,6 +115,8 @@ async function queryToTiledTopK(query, embeddings, topkinf, pqdistinf, k, filter
   const chunkSize = 100000;
   const dists = Float32Array.from({length: filterColumn.length}, () => filterValue * 2); // initially, distances is double the bad value, everything is +Inf away
   let topk;
+  let lastPaint = Date.now();
+  const maxTick = 30;
   const timingStrings = [];
   console.log({distsLength: dists.length, chunkSize})
   for(let i=0; i<dists.length && continueFn();i+=chunkSize) {
@@ -133,7 +135,10 @@ async function queryToTiledTopK(query, embeddings, topkinf, pqdistinf, k, filter
       dists[i+j] = distTile[j];
     }
     const distTime = Date.now();
-    await (new Promise(r => setTimeout(r,0)));
+    if(distTime - lastPaint > maxTick) {
+      await (new Promise(r => setTimeout(r,0)));
+      lastPaint = Date.now()
+    }
     // console.log({distTiming: distTime - startTime});
     const {output: {data: topkTile}} = await topkinf.run({
       "input": (new Tensor("float32", dists)),
