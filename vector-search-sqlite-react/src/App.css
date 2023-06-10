@@ -1,6 +1,14 @@
 .App {
   text-align: center;
+  width: 4in;
+  margin: auto;
 }
+
+textarea { width: 100% }
+input { width: 100% }
+
+h2 .range-slider__tooltip__label { font-size: 12px; font-weight: normal; letter-spacing: 0.25em; }
+h3 .range-slider__tooltip__label { font-size: 24px; font-weight: normal;}
 
 .App-logo {
   height: 40vmin;
@@ -32,6 +40,15 @@ h1 {
   font-size: 0.275in;
 }
 
+.topk-result {
+  text-align: left;
+}
+
+.topk-result-rank {
+  font-size: 0.5em;
+  font-variant-numeric: oldstyle-nums;
+}
+
 h4 {
   position: fixed;
   left: 0;
@@ -41,6 +58,8 @@ h4 {
   margin: 0;
   font-size: 0.1in;
 }
+
+h3 { text-align: right; font-style: italic;}
 
 textarea, input[type="text"], body { font-size: 18px; }
 
