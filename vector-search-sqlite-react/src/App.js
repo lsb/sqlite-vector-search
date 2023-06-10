@@ -5,6 +5,7 @@ import codebk from './codewords.json';
 import { pipeline } from '@xenova/transformers';
 import * as ort from 'onnxruntime-web';
 import RangeSlider from 'react-bootstrap-range-slider';
+import millify from 'millify';
 
 const InferenceSession = ort.InferenceSession;
 const Tensor = ort.Tensor;
@@ -107,7 +108,31 @@ const codebkT = new Tensor("float32", codebkflat, codebookshape)
 
 const numpyChunkSize = 200000;
 
-async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, intermediateValueFn, continueFn) {
+async function distTopK(inferenceSession, dists, filterColumn, filterValue, filterZero, filterShim, k) {
+  // console.log("trying to distTopk");
+  const {output: {data: topk}} = await inferenceSession.run({
+    "input": (new Tensor("float32", dists)),
+    "filterColumn": (new Tensor("float32", filterColumn)),
+    "filterValue": (new Tensor("float32", [filterValue])),
+    "filterZero": (new Tensor("float32", [filterZero])),
+    "filterShim": (new Tensor("float32", [filterShim])),
+    "k": (new Tensor("uint8", [k])),
+  });
+  return topk;
+}
+
+async function queryDist(inferenceSession, query, codebook, codebookShape, embeddings, embeddingTensorShape) {
+  // console.log("trying to querydist", {query, codebook, codebookShape, embeddings, embeddingTensorShape});
+  const {output: {data: distTile}} = await inferenceSession.run({
+    "query": (new Tensor("float32", query)),
+    "codebook": (new Tensor("float32", codebook, codebookShape)),
+    "embeddings": (new Tensor("uint8", embeddings, embeddingTensorShape)),
+
+  })
+  return distTile;
+}
+
+async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, k, intermediateValueFn, continueFn, embeddingCounter=0) {
   // compute distances a tile at a time, update in the dists array, compute topk not more frequently than every 30 ms (to avoid excessive screen repainting)
   // on an iphone, distances for 1M embeddings runs in ~100 ms whereas topk for 1M floats runs in ~3ms
   // call a sentinel function to halt processing if the outside state changes (there is probably a better way)
@@ -116,7 +141,7 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
   const maxTick = 30;
   const timingStrings = [];
   // console.log({dists: dists.length, chunkSize, firstLetters: firstLetters.length});
-  for(let embeddingCounter=0; embeddingCounter<embeddings.length; embeddingCounter++){
+  for(; embeddingCounter<embeddings.length; embeddingCounter++){
     // console.log(`starting embedding ${embeddingCounter}`)
     const {data: embeddingData, offset: embeddingOffset} = embeddings[embeddingCounter];
     for(let i=0; i < (embeddingData.length / codebk.length) && continueFn(); i+=chunkSize) {
@@ -127,11 +152,7 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
       const embeddingTensorShape = [chunkSize, codebk.length];
       const embeddingTile = new Uint8Array(embeddingData.buffer, startEmbeddingPosition + embeddingData.byteOffset, embeddingTileLength);
       // console.log({i, startEmbeddingPosition, embeddingTileLength, embeddingTensorShape, workingShape: [embeddings.length / codebk.length, codebk.length], embeddingTile, embeddings});
-      const {output: {data: distTile}} = await pqdistinf.run({
-        "query": (new Tensor("float32", query)),
-        "codebook": codebkT,
-        "embeddings": (new Tensor("uint8", embeddingTile, embeddingTensorShape)),
-      });
+      const distTile = await queryDist(pqdistinf, query, codebkflat, codebookshape, embeddingTile, embeddingTensorShape);
       // console.log("got dists")
       for(let j=0;j<chunkSize;j++) {
         dists[embeddingOffset+i+j] = distTile[j];
@@ -144,14 +165,7 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
       // console.log("1")
       if((i === 0 && embeddingCounter === 0) || (distTime - lastPaint > maxTick)) {
         // console.log("0, or we're over time")
-        const {output: {data: topk}} = await filteredtopkinf.run({
-          "input": (new Tensor("float32", dists)),
-          "filterColumn": (new Tensor("float32", firstLetters)),
-          "filterValue": (new Tensor("float32", [firstLetterInt])),
-          "filterZero": (new Tensor("float32", [0])),
-          "filterShim": (new Tensor("float32", [1024])),
-          "k": (new Tensor("uint8", [10])),
-        })
+        const topk = await distTopK(filteredtopkinf, dists, firstLetters, firstLetterInt, 0, 1024, k);
         const topktime = Date.now();
         timingStrings.push(`-${topktime-distTime} `);
         intermediateValueFn({topk});
@@ -160,22 +174,16 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
       }
     }
   }
-  // console.log("final topk")
-  const {output: {data: topk}} = await filteredtopkinf.run({
-    "input": (new Tensor("float32", dists)),
-    "filterColumn": (new Tensor("float32", firstLetters)),
-    "filterValue": (new Tensor("float32", [firstLetterInt])),
-    "filterZero": (new Tensor("float32", [0])),
-    "filterShim": (new Tensor("float32", [1024])),
-    "k": (new Tensor("uint8", [10])),
-  })
-  return {dists, distTime: timingStrings.join(), topk};
+  if(continueFn()) {
+    const topk = await distTopK(filteredtopkinf, dists, firstLetters, firstLetterInt, 0, 1024, k);
+    intermediateValueFn({dists, distTime: timingStrings.join(), topk});
+  }
 }
 
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {query: "where a word means like how it sounds", firstLetter: "", chunkCount: 10, embeddings: [], dists: [], firstLetters: []};
+    this.state = {query: "where a word means like how it sounds", firstLetter: "", chunkCount: 10, k: 10, embeddings: [], dists: [], firstLetters: []};
   }
   async componentDidMount() {
     let extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
@@ -213,23 +221,32 @@ class App extends React.Component {
       for(let j = 0; j < lastEmbedding.data.length / codebk.length; j++) {
         firstLetters[lastEmbedding.offset + j] = lastEmbedding.title.get(j)['title'].charCodeAt(0);
       }
-      await this.makeQuery();
+      await this.makeQuery({onlyLast: true, skipEmbed: true});
     }
-    this.setState({loadingEmbeddings: false}, () => this.makeQuery())
-
+    this.setState({loadingEmbeddings: false}, () => this.makeQuery({onlyFilter: true}))
   }
-  async makeQuery() {
-    const {extractor, embeddings, query, firstLetters, firstLetter, filteredtopkinf, pqdistinf, dists, } = this.state;
+  async makeQuery({onlyLast, onlyFilter, skipEmbed}) {
+    const {extractor, embeddings, query, queryEmbedding, firstLetters, firstLetter, filteredtopkinf, pqdistinf, dists, k, } = this.state;
     const firstLetterInt = firstLetter.length === 0 ? 0 : firstLetter.charCodeAt(0);
-    const minilmstart = Date.now();
-    const minilmresult = await extractor(query, {pooling: "mean", normalize: true});
-    const minilmend = Date.now();
-    this.setState({minilmtime: minilmend - minilmstart});
-    const {distTime, topk} = await queryToTiledDist(minilmresult.data, embeddings, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, (h) => this.setState(h), () => query === this.state.query);
-    this.setState({distTime, topk});
+    if(onlyFilter) {
+      const startTime = Date.now();
+      const topk = await distTopK(filteredtopkinf, dists, firstLetters, firstLetterInt, 0, 1024, k);
+      const endTime = Date.now();
+      this.setState({topk, distTime: `${endTime - startTime}`, minilmtime: "—"});
+      return;
+    }
+    if(!skipEmbed || !queryEmbedding){
+      const minilmstart = Date.now();
+      const minilmresult = await extractor(query, {pooling: "mean", normalize: true});
+      const minilmend = Date.now();
+      this.setState({minilmtime: minilmend - minilmstart, queryEmbedding: minilmresult.data}, () => this.makeQuery({skipEmbed: true}));
+      return;
+    }
+    const embeddingCounter = onlyLast ? (embeddings.length - 1) : 0;
+    await queryToTiledDist(queryEmbedding, embeddings, pqdistinf, dists, firstLetters, firstLetterInt, filteredtopkinf, k, (h) => this.setState(h), () => query === this.state.query, embeddingCounter);
   }
   render() {
-    const {query, minilmtime, distTime, firstLetter, filteredtopkinf, topk, embeddings, extractor} = this.state;
+    const {query, minilmtime, distTime, firstLetter, filteredtopkinf, topk, embeddings, extractor, k, newEmbeddingSliderValue} = this.state;
     if(!extractor) {
       return (<div>Waiting for MiniLM to load</div>);
     }
@@ -241,23 +258,34 @@ class App extends React.Component {
     }
     return (<div className="App">
       <h1>Wikipedia search-by-vibes</h1>
-      <h2><textarea value={query} placeholder="query to make" onChange={e => this.setState({query: e.target.value}, () => this.makeQuery())}></textarea><br/>
-      <input type="text" value={firstLetter} placeholder="first letter to filter on"
-             onChange={e => this.setState({firstLetter: e.target.value.slice(0,1)}, () => this.makeQuery())}></input></h2>
-      <div>
+      <h2>
+        <textarea value={query} placeholder="query to make" onChange={e => this.setState({query: e.target.value}, () => this.makeQuery({}))}></textarea>
+        <br/>
+        <input type="text" value={firstLetter} placeholder="first letter to filter on"
+             onChange={e => this.setState({firstLetter: e.target.value.slice(0,1)}, () => this.makeQuery({onlyFilter: true}))}>
+        </input>
+        <RangeSlider tooltip='on' tooltipLabel={currentValue => currentValue === 1 ? 'TOP RESULT' : `TOP ${currentValue} RESULTS`} min={1} max={200} value={k} tooltipPlacement={'top'} onChange={e => this.setState({k: e.target.value}, () => this.makeQuery({onlyFilter: true}))} />
+        </h2>
+      <div className='topk-results'>
         {
-          (!topk) ? "Waiting for topk to run once" : [...Int32Array.from(topk, e => Number(e))].filter(idx => idx < embeddings.length * numpyChunkSize).map((idx) => (<div class="" key={`topk${idx}`} title={idx}>{(embeddings[Math.floor(idx / numpyChunkSize)].title).get(idx % numpyChunkSize)['title']}<sup>{`${idx}`}</sup></div>))
+          (!topk) ? "Waiting for topk to run once" : [...Int32Array.from(topk, e => Number(e))].filter(idx => idx < embeddings.length * numpyChunkSize).map((idx) => (
+          <div className='topk-result' key={`topk${idx}`}>
+            <span className='topk-result-title'>{(embeddings[Math.floor(idx / numpyChunkSize)].title).get(idx % numpyChunkSize)['title']}</span>
+            <span className='topk-result-rank' title='the rank of the compressed size of the page, 1 is the largest page on Wikipedia'>{millify(idx, {lowercase: true, precision: 0})}</span>
+            </div>))
         }
       </div>
       <h4>minilm: {minilmtime} ms <br/> topk: {distTime} ms</h4>
-      <h3>
-        <RangeSlider tooltip='on' tooltipLabel={currentValue => (this.state.loadingEmbeddings ? "⏳ " : "") + (currentValue === embeddings.length ? `Searching ${embeddings.length * numpyChunkSize / 1000000}M articles` : `Load ${currentValue * numpyChunkSize / 1000000}M articles`)}
-          min={0} max={32} value={this.state.newEmbeddingSliderValue || embeddings.length}
-          onChange={e => this.setState({newEmbeddingSliderValue: e.target.value})}
-          onAfterChange={e => {this.setState({newEmbeddingSliderValue: null}); this.loadEmbeddings(e.target.value)}}
+      <h2>
+        <RangeSlider tooltip='on' tooltipLabel={currentValue => (this.state.loadingEmbeddings ? "⏳ " : "") + (currentValue === embeddings.length ? `SEARCHING ${embeddings.length * numpyChunkSize / 1000000} MILLION PAGES OFFLINE.` : `LOAD ${currentValue * numpyChunkSize / 1000000} MILLION PAGES`)}
+          min={0} max={32} value={newEmbeddingSliderValue || embeddings.length}
+          tooltipPlacement='top'
+          onChange={e => this.state.loadingEmbeddings ? "" : this.setState({newEmbeddingSliderValue: e.target.value})}
+          onAfterChange={e => {if(this.state.loadingEmbeddings) { return; } const newVal = e.target.value; this.setState({newEmbeddingSliderValue: undefined, loadingEmbeddings: true}, () => this.loadEmbeddings(newVal))}}
           />
-        <br/>
-        © Lee Butterman 2023
+      </h2>
+      <h3 style={ {textAlign: 'right'}} >
+         —Lee Butterman, June 2023.<br/><a href="https://leebutterman.com">how this was made ⋙</a>
       </h3>
 
     </div>);
