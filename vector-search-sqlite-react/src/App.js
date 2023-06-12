@@ -5,9 +5,10 @@ import codebk from './codewords.json';
 import { pipeline, env } from '@xenova/transformers';
 import * as ort from 'onnxruntime-web';
 import RangeSlider from 'react-bootstrap-range-slider';
-import millify from 'millify';
+import {format} from 'd3-format';
 import {filteredTopKAsc, pqDist} from 'pq.js';
 
+const format3SI = format('.3s')
 const InferenceSession = ort.InferenceSession;
 const Tensor = ort.Tensor;
 
@@ -190,7 +191,7 @@ class App extends React.Component {
           (!topk) ? "Waiting for topk to run once" : [...Int32Array.from(topk, e => Number(e))].filter(idx => idx < embeddings.length * numpyChunkSize).map((idx) => (
           <div className='topk-result' key={`topk${idx}`}>
             <span className='topk-result-title'>{(embeddings[Math.floor(idx / numpyChunkSize)].title).get(idx % numpyChunkSize)['title']}</span>
-            <span className='topk-result-rank' title='the rank of the compressed size of the page, 1 is the largest page on Wikipedia'>{millify(idx, {lowercase: true, precision: 0})}</span>
+            <span className='topk-result-rank' title='the rank of the compressed size of the page, 1 is the largest page on Wikipedia'>{format3SI(idx).toUpperCase()}</span>
             </div>))
         }
       </div>
