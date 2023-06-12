@@ -204,7 +204,7 @@ class App extends React.Component {
           />
       </h2>
       <h3 style={ {textAlign: 'right'}} >
-         —Lee Butterman, June 2023.<br/><a href="https://leebutterman.com">how this was made ⋙</a>
+         —Lee Butterman, June 2023.<br/><a href="https://www.leebutterman.com/2023/06/01/offline-realtime-embedding-search.html">how this was made ⋙</a>
       </h3>
 
     </div>);
