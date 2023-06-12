@@ -116,11 +116,16 @@ class App extends React.Component {
       dists[i] = this.state.dists[i];
     }
     this.setState({embeddings, firstLetters, dists, loadingEmbeddings: true});
+    const responses = {};
     for(let i = embeddings.length; i < maxCount; i++) {
       const embeddingShardPath = `./embedding-${i}-shardsize-${numpyChunkSize}.arrow`;
       const titleShardPath = `./title-${i}-shardsize-${numpyChunkSize}.arrow`;
       const eResponse = await fetch(embeddingShardPath);
       const tResponse = await fetch(titleShardPath);
+      responses[i] = {eResponse, tResponse};
+    }
+    for(let i = embeddings.length; i < maxCount; i++) {
+      const {eResponse, tResponse} = responses[i];
       const eBuffer = await eResponse.arrayBuffer();
       const tBuffer = await tResponse.arrayBuffer();
       const eArrow = tableFromIPC(eBuffer);
