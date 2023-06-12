@@ -4,8 +4,26 @@
   margin: auto;
 }
 
-textarea { width: 100% }
-input { width: 100% }
+@media (prefers-color-scheme: dark) { body {
+  background-color: #000;
+  color: #eee;
+}
+  a:link { color: #99f; }
+  a:visited { color: #98f; }
+  textarea, input { background-color: #111; color: #fff; }
+}
+
+@media (prefers-color-scheme: light) { body {
+  background-color: #fff;
+  color: #000;
+}}
+
+textarea, input { width: 95%; padding: 0px; margin: auto;}
+
+h2 {
+  width: 100%;
+  margin: auto;
+}
 
 h2 .range-slider__tooltip__label { font-size: 12px; font-weight: normal; letter-spacing: 0.25em; }
 h3 .range-slider__tooltip__label { font-size: 24px; font-weight: normal;}
@@ -40,13 +58,16 @@ h1 {
   font-size: 0.275in;
 }
 
+.topk-results {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
 .topk-result {
   text-align: left;
 }
 
 .topk-result-rank {
   font-size: 0.5em;
-  font-variant-numeric: oldstyle-nums;
 }
 
 h4 {
