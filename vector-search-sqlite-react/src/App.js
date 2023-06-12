@@ -2,7 +2,7 @@ import './App.css';
 import React from 'react';
 import { tableFromIPC } from 'apache-arrow';
 import codebk from './codewords.json';
-import { pipeline } from '@xenova/transformers';
+import { pipeline, env } from '@xenova/transformers';
 import * as ort from 'onnxruntime-web';
 import RangeSlider from 'react-bootstrap-range-slider';
 import millify from 'millify';
@@ -97,6 +97,7 @@ class App extends React.Component {
   constructor(props) {
     super(props);
     this.state = {query: "where a word means like how it sounds", firstLetter: "", chunkCount: 10, k: 10, embeddings: [], dists: [], firstLetters: []};
+    env.localModelPath = './models/'
   }
   async componentDidMount() {
     let extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
