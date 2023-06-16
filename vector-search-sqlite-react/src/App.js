@@ -97,7 +97,7 @@ async function queryToTiledDist(query, embeddings, pqdistinf, dists, firstLetter
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {query: "where a word means like how it sounds", firstLetter: "", firstChunkCount: 1, chunkCount: 10, k: 10, embeddings: [], dists: [], firstLetters: []};
+    this.state = {query: "where a word means like how it sounds", firstLetter: "", chunkCount: 10, k: 10, embeddings: [], dists: [], firstLetters: []};
     env.localModelPath = './models/'
   }
   async componentDidMount() {
@@ -105,7 +105,7 @@ class App extends React.Component {
     this.setState({extractor});
     const filteredtopkinf = await InferenceSession.create(filteredTopKAsc);
     const pqdistinf = await InferenceSession.create(pqDist, {executionProviders: ['wasm']});
-    this.setState({filteredtopkinf, pqdistinf}, () => this.loadEmbeddings(this.state.firstChunkCount).then( this.loadEmbeddings(this.state.chunkCount) ));
+    this.setState({filteredtopkinf, pqdistinf}, () => this.loadEmbeddings(this.state.chunkCount));
   }
   async loadEmbeddings(maxCount) {
     const embeddings = this.state.embeddings.slice(0, maxCount);
@@ -117,16 +117,11 @@ class App extends React.Component {
       dists[i] = this.state.dists[i];
     }
     this.setState({embeddings, firstLetters, dists, loadingEmbeddings: true});
-    const responses = {};
     for(let i = embeddings.length; i < maxCount; i++) {
       const embeddingShardPath = `./embedding-${i}-shardsize-${numpyChunkSize}.arrow`;
       const titleShardPath = `./title-${i}-shardsize-${numpyChunkSize}.arrow`;
       const eResponse = await fetch(embeddingShardPath);
       const tResponse = await fetch(titleShardPath);
-      responses[i] = {eResponse, tResponse};
-    }
-    for(let i = embeddings.length; i < maxCount; i++) {
-      const {eResponse, tResponse} = responses[i];
       const eBuffer = await eResponse.arrayBuffer();
       const tBuffer = await tResponse.arrayBuffer();
       const eArrow = tableFromIPC(eBuffer);
