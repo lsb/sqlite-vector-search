@@ -98,7 +98,8 @@ class App extends React.Component {
   constructor(props) {
     super(props);
     this.state = {query: "where a word means like how it sounds", firstLetter: "", chunkCount: 10, k: 10, embeddings: [], dists: [], firstLetters: []};
-    env.localModelPath = './models/'
+    env.localModelPath = './models/' ;
+    env.backends.onnx.wasm.simd = true;
   }
   async componentDidMount() {
     let extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
