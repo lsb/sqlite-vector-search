@@ -4,8 +4,6 @@
   "homepage": ".",
   "private": true,
   "dependencies": {
-    "@tensorflow/tfjs": "^4.6.0",
-    "@tensorflow/tfjs-backend-wasm": "^4.6.0",
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
@@ -13,7 +11,6 @@
     "apache-arrow": "^12.0.0",
     "d3-format": "^3.1.0",
     "embeddingdb.js": "github:lsb/embeddingdb.js#v0.2.3",
-    "npyjs": "^0.4.0",
     "onnxruntime-web": "^1.14.0",
     "react": "^18.2.0",
     "react-bootstrap-range-slider": "^3.0.8",
