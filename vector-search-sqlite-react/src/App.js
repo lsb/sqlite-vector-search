@@ -106,9 +106,14 @@ class App extends React.Component {
             (embeddings ? "" : "Waiting for embeddings to load. ") + (extractor ? "" : " Waiting for semantic sentence language model to load. " ) + (" Waiting to run query.")
           ) : [...Int32Array.from(topk, e => Number(e))].filter(idx => idx < embeddings.length * numpyChunkSize).map((idx) => (
           <div className='topk-result' key={`topk${idx}`}>
-            <span className='topk-result-title'>{(embeddings[Math.floor(idx / numpyChunkSize)].title).get(idx % numpyChunkSize)['title']}</span>
+            {(() => {
+              let title = (embeddings[Math.floor(idx / numpyChunkSize)].title).get(idx % numpyChunkSize)['title'];
+              return <span className='topk-result-title'>
+                <a href={"https://en.wikipedia.org/wiki/" + encodeURIComponent(title.replaceAll(" ", "_"))}>{title}</a>
+              </span>
+            })()}
             <span className='topk-result-rank' title='the rank of the compressed size of the page, 1 is the largest page on Wikipedia'>{format3SI(idx).toUpperCase()}</span>
-            </div>))
+          </div>))
         }
       </div>
       <h4>minilm: {minilmtime} ms <br/> topk: {distTime} ms</h4>
